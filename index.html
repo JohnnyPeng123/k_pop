@@ -1,0 +1,252 @@
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: Helvetica, Arial, sans-serif
+        }
+
+        h1 {
+            background-color: #2a5599;
+            color: white;
+            padding: 5px;
+        }
+
+        svg {
+             border: 1px solid black;
+        }
+
+        .mainView {
+            display:flex;
+        }
+
+    </style>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alasql@0.6"></script>
+    
+</head>
+
+<body>
+    <div id="container"></div>
+      <br>
+    <div>
+      <svg id="main"></svg>
+</body>
+
+ <script> 
+    let data = {}
+
+    function loadData() {
+        return Promise.all([
+            d3.csv("k-pop_edge.csv"),
+            d3.csv("k-pop_node.txt"),
+        ]).then(datasets => {
+            data.nodes = datasets[1];
+
+            const links = datasets[0].map(({source, target}) => ({
+              source,
+              dest: target
+            }));
+
+            data.links = links
+            
+            return data;
+        })
+    }
+
+  loadData().then(main);      
+  
+  function main() {
+
+        width = 954
+        radius = width/2
+
+        const svg = d3.select("#main")
+                  .attr("width", 1400) 
+                  .attr("height", 1400)
+
+        alasql("CREATE TABLE nodes (id string, type string, name string)");
+        alasql.tables.nodes.data = data.nodes;
+
+        alasql("CREATE TABLE links (source string, dest string)");
+        alasql.tables.links.data = data.links;
+
+        var node_links = alasql("SELECT max(d.source) as source, max(d.dest) as dest, d.source_type, d.source_name, d.target_type, d.target_name FROM (SELECT a.*, b.type as source_type, b.name as source_name, c.type as target_type, c.name as target_name FROM links a LEFT JOIN nodes b ON a.source = b.id LEFT JOIN nodes c on a.dest = c.id) d group by source_type, source_name, target_type, target_name");
+
+        // Since we are only interested in hierarchical relationship, we will filter any non-hierarchical edges
+
+        node_links = node_links.filter(d => 
+          d.source_type == "label" & d.target_type != "label" | 
+          d.source_type == "group" & d.target_type != "label" & 
+          d.source_type == "group" & d.target_type != "group");
+
+        label_only = node_links.filter(d => d.source_type == "label");
+
+        let labels = [];
+
+        for (idx in label_only) {
+            labels.push(label_only[idx].source_name);
+        }
+
+        labels = Array.from(new Set(labels));
+
+        labels = labels.sort((a, b) => d3.ascending(a, b))
+
+        // Create Drop Down Box
+        var values = labels;
+
+        var select = document.createElement("select");
+          select.name = "Label";
+          select.id = "Label"
+
+          for (const val of values) {
+            var option = document.createElement("option");
+            option.value = val;
+            option.text = val.charAt(0).toUpperCase() + val.slice(1);
+            select.appendChild(option);
+          }
+
+          var label = document.createElement("label");
+          label.innerHTML = "Choose Label: "
+          label.htmlFor = "Label";
+
+          document.getElementById("container").appendChild(label).appendChild(select);
+    } 
+
+    function update() {
+        // Filter for selected label - S.M. Entertainment
+
+        width = 954
+        radius = width/2
+
+        const svg = d3.select("#main")
+                  .attr("width", 1400) 
+                  .attr("height", 1400)
+
+        svg.selectAll("*").remove()
+
+        var node_links = alasql("SELECT max(d.source) as source, max(d.dest) as dest, d.source_type, d.source_name, d.target_type, d.target_name FROM (SELECT a.*, b.type as source_type, b.name as source_name, c.type as target_type, c.name as target_name FROM links a LEFT JOIN nodes b ON a.source = b.id LEFT JOIN nodes c on a.dest = c.id) d group by source_type, source_name, target_type, target_name");
+
+        // Since we are only interested in hierarchical relationship, we will filter any non-hierarchical edges
+
+        node_links = node_links.filter(d => 
+          d.source_type == "label" & d.target_type != "label" | 
+          d.source_type == "group" & d.target_type != "label" &
+          d.source_type == "group" & d.target_type != "group");
+
+        var e = document.getElementById("Label");
+        var strUser = e.options[e.selectedIndex].value;
+
+        node_links_label = node_links.filter(d => 
+          d.source_name == strUser);
+
+        node_links_group = node_links_label.filter(d => 
+          d.target_type == "group");
+
+        let groups = [];
+
+        for (idx in node_links_group) {
+            groups.push(node_links_group[idx].dest);
+        }
+
+        groups = Array.from(new Set(groups));
+
+        node_links_member = []
+        
+        for (i=0; i < groups.length; i++) {
+          node_links_member.push(node_links.filter(d => d.source == groups[i]))
+        }
+
+        // Combine all the hierarchi to form a tree dataset, start from the lowest level
+
+        members = {};
+
+        for (idx in node_links_member) {
+          for (idx2 in node_links_member[idx]) {
+            if (typeof members[node_links_member[idx][idx2].source_name] === 'undefined') {
+              members[node_links_member[idx][idx2].source_name]=[];
+                }   
+            members[node_links_member[idx][idx2].source_name].push({
+              name:node_links_member[idx][idx2].target_name})
+          } 
+        }
+
+        members_tree = [];
+
+        for (idx in Object.keys(members)) {
+          key = Object.keys(members)[idx]
+          temp = {
+              "name": key,
+              "children": members[key]
+          };
+          members_tree.push(temp)
+        }  
+
+        label_tree = {
+          "name": node_links_label[0].source_name,
+          "children": members_tree
+        };
+
+        // Construct Tree 
+
+        tree = d3.tree()
+        .size([2 * Math.PI, radius])
+        .separation((a, b) => (a.parent == b.parent ? 1 : 2) / a.depth)
+
+        data_tree = d3.hierarchy(label_tree)
+                    .sort((a, b) => d3.ascending(a.data.name, b.data.name))
+
+        const root = tree(data_tree);
+      
+        svg.append("g")
+            .attr("fill", "none")
+            .attr("stroke", "#555")
+            .attr("stroke-opacity", 0.4)
+            .attr("stroke-width", 1.5)
+          .selectAll("path")
+          .data(root.links())
+          .join("path")
+            .attr("d", d3.linkRadial()
+                .angle(d => d.x)
+                .radius(d => d.y));
+        
+        svg.append("g")
+          .selectAll("circle")
+          .data(root.descendants())
+          .join("circle")
+            .attr("transform", d => `
+              rotate(${d.x * 180 / Math.PI - 90})
+              translate(${d.y},0)
+            `)
+            .attr("fill", d => d.children ? "#555" : "#999")
+            .attr("r", 2.5);
+
+        svg.append("g")
+            .attr("font-family", "sans-serif")
+            .attr("font-size", 10)
+            .attr("stroke-linejoin", "round")
+            .attr("stroke-width", 3)
+          .selectAll("text")
+          .data(root.descendants())
+          .join("text")
+            .attr("transform", d => `
+              rotate(${d.x * 180 / Math.PI - 90}) 
+              translate(${d.y},0) 
+              rotate(${d.x >= Math.PI ? 180 : 0})
+            `)
+            .attr("dy", "0.31em")
+            .attr("x", d => d.x < Math.PI === !d.children ? 6 : -6)
+            .attr("text-anchor", d => d.x < Math.PI === !d.children ? "start" : "end")
+            .text(d => d.data.name)
+          .clone(true).lower()
+            .attr("stroke", "white");
+
+        svg.selectAll("g").attr('transform', 'translate(700, 700)')
+
+  }
+
+  document.getElementById("container").addEventListener("input", update);
+
+ </script>
+
+</html>
