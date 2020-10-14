@@ -143,6 +143,9 @@
         node_links_group = node_links_label.filter(d => 
           d.target_type == "group");
 
+        node_links_member_only = node_links_label.filter(d => 
+          d.target_type != "group");
+
         let groups = [];
 
         for (idx in node_links_group) {
@@ -165,9 +168,17 @@
           for (idx2 in node_links_member[idx]) {
             if (typeof members[node_links_member[idx][idx2].source_name] === 'undefined') {
               members[node_links_member[idx][idx2].source_name]=[];
-                }   
+                }
             members[node_links_member[idx][idx2].source_name].push({
               name:node_links_member[idx][idx2].target_name})
+          } 
+        }
+
+        group_members = []
+
+        for (idx in node_links_member) {
+          for (idx2 in node_links_member[idx]) {
+            group_members.push(node_links_member[idx][idx2].target_name)
           } 
         }
 
@@ -180,6 +191,15 @@
               "children": members[key]
           };
           members_tree.push(temp)
+        }  
+
+        for (idx in Object.keys(node_links_member_only)) {
+          if (!(group_members.includes(node_links_member_only[idx].target_name))) {
+            temp = {
+                "name": node_links_member_only[idx].target_name,
+            };
+            members_tree.push(temp)
+          }
         }  
 
         label_tree = {
