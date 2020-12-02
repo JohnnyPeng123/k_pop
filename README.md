@@ -5,6 +5,10 @@ https://htmlpreview.github.io/?https://github.com/JohnnyPeng123/k_pop/main/index
 
 ![alt text](https://github.com/JohnnyPeng123/k_pop/blob/main/screen-shot.PNG?raw=true)
 
+Data Source:
+
+http://mozart.diei.unipg.it/gdcontest/contest2020/topics.html
+
 The implementation of the individual radial tidy tree in the visualization was based on the codes from the link below:
 https://observablehq.com/@d3/radial-tidy-tree
 
